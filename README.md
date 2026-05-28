@@ -1,5 +1,3 @@
-I am learning some ML. You can follow along as I learn! 
+I am learning some ML. I plan to go through Computer Vision. 
 
-Currently: I have created a Neural net on MNIST with 89% accuracy, I have implemented SARSA on a simple maze-like game, done some simple ML tasks on the Iris Dataset.
-
-Next: DQN, Kpop face detector
+$$x_0$$
