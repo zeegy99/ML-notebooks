@@ -9,7 +9,7 @@ We start with a classification question and work through EDA and build some feat
 
 ## Diffusion Models
 
-We start with [DDPM](https://arxiv.org/pdf/2006.11239): [Link to Notebook](DDPM.ipynb) since this is the stable of all diffusion models and I wanted to know how people generate images with AI.
+We start with [DDPM](https://arxiv.org/pdf/2006.11239): [Link to Notebook](DDPM/DDPM.ipynb) since this is the stable of all diffusion models and I wanted to know how people generate images with AI.
 
 Basic Background: The Diffusion Probabilistic Model utilizes Markov Chains and some elegant properties to generate images from Random Noise. \
 
