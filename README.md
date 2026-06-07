@@ -9,7 +9,7 @@ We start with a classification question and work through EDA and build some feat
 
 ## Diffusion Models
 
-We start with [DDPM](https://arxiv.org/pdf/2006.11239): [Link to Notebook](DDPM.ipynb) since this is the stable of all diffusion models and I wanted to know how people generate images with AI.
+We start with [DDPM](https://arxiv.org/pdf/2006.11239): [Link to Notebook](DDPM/DDPM.ipynb) since this is the stable of all diffusion models and I wanted to know how people generate images with AI.
 
 Basic Background: The Diffusion Probabilistic Model utilizes Markov Chains and some elegant properties to generate images from Random Noise. \
 
@@ -18,7 +18,7 @@ The core idea is that given an image that is N(0, 1) Gaussian Noise, we slowly d
 
 For More information and all of the math behind this paper, look [Here] (https://www.overleaf.com/read/pszbcvbmptms#9f695c) 
 
-
+An image that we generated based off Kpop Idol Wonhee: ![Some Images](DDPM/sample_3.png) 
 
 **Neural Networks / Backpropogation**
 
