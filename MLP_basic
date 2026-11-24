@@ -1,0 +1,303 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "authorship_tag": "ABX9TyO4wiAyngySxAd20AfFaPP+",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/zeegy99/ML-notebooks/blob/main/MLP_basic\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "pzMXlG6nv4cD"
+      },
+      "outputs": [],
+      "source": [
+        "import matplotlib.pyplot as plt\n",
+        "%matplotlib inline\n",
+        "import torch\n",
+        "import torch.nn.functional as F"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "words = open('names.txt', 'r').read().splitlines()\n",
+        "\n",
+        "chars = sorted(list(set(''.join(words))))\n",
+        "stoi = {s:i+1 for i,s in enumerate(chars)}\n",
+        "stoi['.'] = 0\n",
+        "itos = {i:s for s,i in stoi.items()}\n",
+        "vocab_size = len(itos)\n",
+        "\n",
+        "n_embd = 10 # the dimensionality of the character embedding vectors\n",
+        "n_hidden = 200 # the number of neurons in the hidden layer of the MLP\n",
+        "\n",
+        "block_size = 3 # context length: how many characters do we take to predict the next one?\n",
+        "\n",
+        "def build_dataset(words):\n",
+        "  X, Y = [], []\n",
+        "\n",
+        "  for w in words:\n",
+        "    context = [0] * block_size\n",
+        "    for ch in w + '.':\n",
+        "      ix = stoi[ch]\n",
+        "      X.append(context)\n",
+        "      Y.append(ix)\n",
+        "      context = context[1:] + [ix] # crop and append\n",
+        "\n",
+        "  X = torch.tensor(X)\n",
+        "  Y = torch.tensor(Y)\n",
+        "  print(X.shape, Y.shape)\n",
+        "  return X, Y\n",
+        "g = torch.Generator().manual_seed(2147483647) # for reproducibility\n",
+        "C  = torch.randn((vocab_size, n_embd),            generator=g)\n",
+        "W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/((n_embd * block_size)**0.5) #* 0.2\n",
+        "#b1 = torch.randn(n_hidden,                        generator=g) * 0.01\n",
+        "W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01\n",
+        "b2 = torch.randn(vocab_size,                      generator=g) * 0\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "6DVUb-947cXm"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import random\n",
+        "random.seed(42)\n",
+        "random.shuffle(words)\n",
+        "n1 = int(0.8*len(words))\n",
+        "n2 = int(0.9*len(words))\n",
+        "\n",
+        "Xtr,  Ytr  = build_dataset(words[:n1])     # 80%\n",
+        "Xdev, Ydev = build_dataset(words[n1:n2])   # 10%\n",
+        "Xte,  Yte  = build_dataset(words[n2:])"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "Rvsdbd9TSmLG",
+        "outputId": "56ff3c1c-9803-4f39-f0db-caf2ca5911e1"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "torch.Size([182625, 3]) torch.Size([182625])\n",
+            "torch.Size([22655, 3]) torch.Size([22655])\n",
+            "torch.Size([22866, 3]) torch.Size([22866])\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "class Linear():\n",
+        "  def __init__(self, fan_in, fan_out, bias=True):\n",
+        "    self.weight = torch.randn(fan_in, fan_out) / fan_in ** 0.5\n",
+        "    self.bias = torch.zeros(fan_out) if bias else None\n",
+        "\n",
+        "  def __call__(self, x):\n",
+        "    self.out = x @ self.weight\n",
+        "    if self.bias is not None:\n",
+        "      self.out += self.bias\n",
+        "\n",
+        "    return self.out\n",
+        "\n",
+        "  def parameters(self):\n",
+        "    return [self.weight] + ([] if self.bias is None else [self.bias])\n",
+        "\n",
+        "class Batchnorm():\n",
+        "  def __init__(self, dim, epsilon = 1e-5, momentum = 0.1):\n",
+        "    self.epsilon = epsilon\n",
+        "    self.momentum = momentum\n",
+        "    self.training = True\n",
+        "    #This has a different behavior between evaluation and training (calculating eval loss)\n",
+        "\n",
+        "    #parameters of batchnorm: gamma and beta\n",
+        "    self.gamma = torch.ones(dim)\n",
+        "    self.beta = torch.zeros(dim)\n",
+        "\n",
+        "    #buffers: trained with exponential moving average\n",
+        "    self.running_mean = torch.zeros(dim)\n",
+        "    self.running_var = torch.ones(dim)\n",
+        "\n",
+        "  def __call__(self, x):\n",
+        "    #calculate forward pass\n",
+        "    if self.training: #While training, use the mean and variance from the batch\n",
+        "      xmean = x.mean(0, keepdim=True)\n",
+        "      xvar = x.var(0, keepdim=True)\n",
+        "    else: #During inference, use the running mean and running variance\n",
+        "      xmean = self.running_mean\n",
+        "      xvar = self.running_var\n",
+        "\n",
+        "    xhat = (x - xmean) / torch.sqrt(xvar + self.epsilon)\n",
+        "    self.out = self.gamma * xhat + self.beta\n",
+        "    #while training, we want to update our running mean\n",
+        "    if self.training:\n",
+        "      with torch.no_grad(): #using torch.no_grad() because we are not going to be doing .backwards() on anything here.\n",
+        "        self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * xmean\n",
+        "        self.running_var = (1 - self.momentum) * self.running_var + self.momentum * xvar\n",
+        "    return self.out\n",
+        "\n",
+        "  def parameters(self):\n",
+        "    return [self.gamma, self.beta]\n",
+        "\n",
+        "class Tanh():\n",
+        "  def __call__(self, x):\n",
+        "    self.out = torch.tanh(x)\n",
+        "    return self.out\n",
+        "\n",
+        "  def parameters(self):\n",
+        "    return []\n"
+      ],
+      "metadata": {
+        "id": "zAKwvIHdynO7"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "#To Torchify the project, it should look something like\n",
+        "n_embed = 10\n",
+        "n_hidden = 100\n",
+        "\n",
+        "C = torch.randn((vocab_size, n_embed))\n",
+        "layers = [\n",
+        "  Linear(n_embed * block_size, n_hidden), Tanh(),\n",
+        "  Linear(n_hidden, n_hidden), Tanh(),\n",
+        "  Linear(n_hidden, n_hidden), Tanh(),\n",
+        "]\n",
+        "\n",
+        "with torch.no_grad():\n",
+        "  layers[-1].weight *= 0.1\n",
+        "  for layer in layers[:-1]:\n",
+        "    if isinstance(layer, Linear):\n",
+        "      layer.weight *= 5 / 3\n",
+        "\n",
+        "parameters = [C] + [p for layer in layers for p in layer.parameters()]\n",
+        "for p in parameters:\n",
+        "  p.requires_grad = True\n",
+        "parameters"
+      ],
+      "metadata": {
+        "id": "eMUYBo8Exw4B",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 211
+        },
+        "outputId": "aa93a260-fe53-4936-cb1b-b10ea9faf2f4"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "error",
+          "ename": "AttributeError",
+          "evalue": "'Tanh' object has no attribute 'weight'",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mAttributeError\u001b[0m                            Traceback (most recent call last)",
+            "\u001b[0;32m/tmp/ipykernel_1183/1538374983.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m     11\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     12\u001b[0m \u001b[0;32mwith\u001b[0m \u001b[0mtorch\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mno_grad\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 13\u001b[0;31m   \u001b[0mlayers\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m-\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mweight\u001b[0m \u001b[0;34m*=\u001b[0m \u001b[0;36m0.1\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     14\u001b[0m   \u001b[0;32mfor\u001b[0m \u001b[0mlayer\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mlayers\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m-\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     15\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0misinstance\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mlayer\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mLinear\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mAttributeError\u001b[0m: 'Tanh' object has no attribute 'weight'"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "max_steps = 200000\n",
+        "batch_size = 32\n",
+        "lossi = []\n",
+        "ud = []\n",
+        "\n",
+        "for i in range(max_steps):\n",
+        "\n",
+        "  # minibatch construct\n",
+        "  ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n",
+        "  Xb, Yb = Xtr[ix], Ytr[ix] # batch X,Y\n",
+        "\n",
+        "  # forward pass\n",
+        "  emb = C[Xb] # embed the characters into vectors\n",
+        "  x = emb.view(emb.shape[0], -1) # concatenate the vectors\n",
+        "  for layer in layers:\n",
+        "    x = layer(x)\n",
+        "  loss = F.cross_entropy(x, Yb) # loss function\n",
+        "\n",
+        "  # backward pass\n",
+        "  for layer in layers:\n",
+        "    layer.out.retain_grad() # AFTER_DEBUG: would take out retain_graph\n",
+        "  for p in parameters:\n",
+        "    p.grad = None\n",
+        "  loss.backward()\n",
+        "\n",
+        "  # update\n",
+        "  lr = 0.1 if i < 150000 else 0.01 # step learning rate decay\n",
+        "  for p in parameters:\n",
+        "    p.data += -lr * p.grad\n",
+        "\n",
+        "  # track stats\n",
+        "  if i % 10000 == 0: # print every once in a while\n",
+        "    print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')\n",
+        "  lossi.append(loss.log10().item())\n",
+        "  with torch.no_grad():\n",
+        "    ud.append([((lr*p.grad).std() / p.data.std()).log10().item() for p in parameters])\n",
+        "\n",
+        "  break"
+      ],
+      "metadata": {
+        "id": "zQtmuGAd6_dm",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 211
+        },
+        "outputId": "f4f3de1c-4e1d-418a-86bb-f63cc54d26b0"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "error",
+          "ename": "RuntimeError",
+          "evalue": "can't retain_grad on Tensor that has requires_grad=False",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mRuntimeError\u001b[0m                              Traceback (most recent call last)",
+            "\u001b[0;32m/tmp/ipykernel_1183/2505199627.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m     19\u001b[0m   \u001b[0;31m# backward pass\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     20\u001b[0m   \u001b[0;32mfor\u001b[0m \u001b[0mlayer\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mlayers\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 21\u001b[0;31m     \u001b[0mlayer\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mout\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mretain_grad\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;31m# AFTER_DEBUG: would take out retain_graph\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     22\u001b[0m   \u001b[0;32mfor\u001b[0m \u001b[0mp\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mparameters\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     23\u001b[0m     \u001b[0mp\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mgrad\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mRuntimeError\u001b[0m: can't retain_grad on Tensor that has requires_grad=False"
+          ]
+        }
+      ]
+    }
+  ]
+}
